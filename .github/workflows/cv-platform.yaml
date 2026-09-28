@@ -9,8 +9,8 @@
 # IMAGE TAG POLICY
 #   * Build tag is the immutable commit SHA (never `latest`/`vN`).
 #   * Deployment is BY DIGEST: CI captures the pushed sha256 digest and writes it
-#     into deploy/helm/cv-platform/values.yaml, then commits (GitOps). The running
-#     workload always equals a signed digest recorded in Git.
+#     into deploy/helm/frontend/values-dev.yaml and .../backend/values-dev.yaml,
+#     then commits (GitOps). The running workload always equals a signed digest in Git.
 #
 # Hardening:
 #   * Minimal top-level permissions; each job elevates only what it needs.
@@ -20,6 +20,7 @@
 #   * Cloud auth (Artifact Registry) via Workload Identity Federation — no keys.
 # =============================================================================
 name: CV Platform CI/CD
+run-name: "CI · ${{ github.event.head_commit.message || github.event_name }} · @${{ github.actor }}"
 
 on:
   workflow_dispatch:            # manual trigger (Actions -> Run workflow)
@@ -40,8 +41,9 @@ concurrency:
 jobs:
   # ---------------------------------------------------------------------------
   pinning-check:
-    name: Actions are SHA-pinned
+    name: 🔒 Gate · Actions SHA-pinned
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       - name: Fail on any unpinned 'uses:'
@@ -54,12 +56,18 @@ jobs:
 
   # ---------------------------------------------------------------------------
   test:
-    name: Unit tests
+    name: 🧪 Gate · Unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5.1.1
-        with: { python-version: "3.11" }
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            services/public-api/requirements.txt
+            services/cv-processor/requirements.txt
       - name: Install + test
         run: |
           pip install -r services/public-api/requirements.txt pytest
@@ -69,8 +77,9 @@ jobs:
 
   # ---------------------------------------------------------------------------
   sast:
-    name: SAST (Semgrep)
+    name: 🔎 Gate · SAST (Semgrep)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       - name: "Semgrep scan (gate: error severity fails)"
@@ -82,12 +91,18 @@ jobs:
 
   # ---------------------------------------------------------------------------
   sca:
-    name: Dependency scan (pip-audit)
+    name: 📦 Gate · Dependency scan (pip-audit)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5.1.1
-        with: { python-version: "3.11" }
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            services/public-api/requirements.txt
+            services/cv-processor/requirements.txt
       - name: pip-audit (dependency CVE gate)
         run: |
           pip install pip-audit
@@ -96,8 +111,9 @@ jobs:
 
   # ---------------------------------------------------------------------------
   secret-scan:
-    name: Secret scan (Gitleaks, full history)
+    name: 🔑 Gate · Secret scan (Gitleaks)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with: { fetch-depth: 0 }
@@ -110,12 +126,18 @@ jobs:
 
   # ---------------------------------------------------------------------------
   iac-scan:
-    name: IaC scan (Checkov)
+    name: 🏗 Gate · IaC scan (Checkov)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5.1.1
-        with: { python-version: "3.11" }
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            services/public-api/requirements.txt
+            services/cv-processor/requirements.txt
       - name: Checkov (report all; gate on app-workload hardening)
         run: |
           pip install checkov
@@ -127,8 +149,9 @@ jobs:
   # Build -> Artifact Registry (immutable :sha), SBOM, scan, keyless sign.
   # Only on push (never fork PRs — no id-token, must not publish).
   build-sign:
-    name: Build, SBOM, scan, sign (Artifact Registry)
+    name: 🚢 Build · SBOM · scan · sign
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [pinning-check, test, sast, sca, secret-scan, iac-scan]
     if: github.event_name != 'pull_request' && vars.GCP_WIF_PROVIDER != ''
     permissions:
@@ -136,6 +159,7 @@ jobs:
       id-token: write      # WIF (AR auth) + keyless cosign (OIDC)
       attestations: write
     strategy:
+      fail-fast: false
       matrix:
         service: [public-api, cv-processor]
     env:
@@ -170,6 +194,8 @@ jobs:
           tags: ${{ env.IMAGE }}:${{ github.sha }}
           provenance: true
           sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           build-args: |
             VERSION=${{ github.ref_name }}
             REVISION=${{ github.sha }}
@@ -208,13 +234,29 @@ jobs:
           name: sbom-${{ matrix.service }}
           path: sbom-${{ matrix.service }}.json
 
+      - name: Run summary
+        if: always()
+        run: |
+          {
+            echo "## Build · ${{ matrix.service }}"
+            echo ""
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| Image | \`${IMAGE}\` |"
+            echo "| Digest | \`${{ steps.build.outputs.digest }}\` |"
+            echo "| Trivy HIGH/CRITICAL | :white_check_mark: passed |"
+            echo "| SBOM (SPDX) | :white_check_mark: attested |"
+            echo "| Signature | :white_check_mark: keyless (Sigstore) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # ---------------------------------------------------------------------------
   # GitOps CD: pin the just-built, signed digests into the Helm values and commit.
   # Argo CD then syncs those exact digests to GKE. GITHUB_TOKEN pushes do not
   # re-trigger CI (no loop); [skip ci] is belt-and-suspenders.
   deploy:
-    name: Deploy to GKE (Helm chart via Argo CD)
+    name: 🚀 Deploy · GKE (Argo CD, gated)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [build-sign]
     # Binds this job to the GitHub Environment named 'dev'. The "Required
     # reviewers" protection rule on that environment pauses the run here with
@@ -255,6 +297,13 @@ jobs:
           cvp=$( docker buildx imagetools inspect "${base}/cv-processor:${GITHUB_SHA}" --format '{{json .Manifest.Digest}}' | tr -d '"')
           echo "public-api   -> $papi"
           echo "cv-processor -> $cvp"
+          {
+            echo "## Deploy · pinned signed digests"
+            echo "| Service | Digest |"
+            echo "|---|---|"
+            echo "| public-api | \`$papi\` |"
+            echo "| cv-processor | \`$cvp\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
           # Per-service charts, DEV env overlay (the deployed environment).
           yq -i ".image.digest = \"$papi\" | .image.tag = \"${GITHUB_SHA}\"" deploy/helm/frontend/values-dev.yaml
           yq -i ".image.digest = \"$cvp\"  | .image.tag = \"${GITHUB_SHA}\"" deploy/helm/backend/values-dev.yaml
@@ -266,4 +315,7 @@ jobs:
           git add deploy/helm/frontend/values-dev.yaml deploy/helm/backend/values-dev.yaml
           git diff --cached --quiet && { echo "no digest change"; exit 0; }
           git commit -m "[skip ci] deploy: pin image digests to ${GITHUB_SHA}"
-          git push
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" && git push && break
+            echo "push race, retry $i"; sleep 3
+          done

@@ -1,5 +1,8 @@
 # CV Platform — Secure CV Processing MVP
 
+![CI/CD](https://github.com/AnkurDhamija/cv-platform/actions/workflows/cv-platform.yaml/badge.svg)
+
+
 > DevSecOps technical assignment. A two-service CV-processing platform whose
 > focus is the **secure delivery platform** around it — IaC, GitOps, supply-chain
 > security, network segmentation, policy enforcement, and observability — not the
