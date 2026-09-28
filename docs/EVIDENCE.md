@@ -158,3 +158,21 @@ managed by Argo CD.
 pass on kind. **(a) signature verification runs in Audit on kind** (in-cluster Kyverno
 can't reach the host-local registry) and is **Enforced on GKE** with Artifact Registry +
 keyless cosign.
+
+## Live re-verification — 2026-09-28
+
+End-to-end proof after a clean rebuild and a live GKE deploy.
+
+### Security controls (a)–(e) — `make verify`
+![make verify: 5 passed, 0 failed](screenshots/12-make-verify-all-controls-pass.jpg)
+Unsigned image rejected, insecure securityContext rejected, public-api→cv-processor allowed,
+cv-processor→internet blocked, and a non-public-api frontend pod blocked from cv-processor.
+
+### SLOs & observability (Grafana)
+![Grafana SLO dashboard, availability 99.4%](screenshots/13-grafana-slos-live.png)
+Both services `up`; availability 99.4% against the 99% SLO; 5xx burn-rate and POST /cvs p95 latency panels populated.
+
+### GKE — GitOps, External Secrets, ingress
+![GKE pods Running, Argo CD synced, External Secrets Operator, LoadBalancer](screenshots/14-gke-argocd-external-secrets-loadbalancer.png)
+frontend/backend workloads Running; **External Secrets Operator** syncing the DB credential from Secret Manager;
+Argo CD `cv-platform-gke` Synced/Healthy; `public-api` exposed via LoadBalancer (34.140.80.141).
