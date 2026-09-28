@@ -22,11 +22,13 @@
 name: CV Platform CI/CD
 
 on:
-  push:
-    branches: [main]
-    tags: ["v*"]
+  workflow_dispatch:            # manual trigger (Actions -> Run workflow)
   pull_request:
     branches: [main]
+  # Auto-trigger on main intentionally disabled for now; re-enable later:
+  # push:
+  #   branches: [main]
+  #   tags: ["v*"]
 
 permissions:
   contents: read
@@ -128,7 +130,7 @@ jobs:
     name: Build, SBOM, scan, sign (Artifact Registry)
     runs-on: ubuntu-latest
     needs: [pinning-check, test, sast, sca, secret-scan, iac-scan]
-    if: github.event_name == 'push' && vars.GCP_WIF_PROVIDER != ''
+    if: github.event_name != 'pull_request' && vars.GCP_WIF_PROVIDER != ''
     permissions:
       contents: read
       id-token: write      # WIF (AR auth) + keyless cosign (OIDC)
@@ -218,7 +220,7 @@ jobs:
     # reviewers" protection rule on that environment pauses the run here with
     # a "Review required" gate until an approver signs off (deployment gate).
     environment: dev
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.GCP_WIF_PROVIDER != ''
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.GCP_WIF_PROVIDER != ''
     permissions:
       contents: write      # commit the values bump back to the repo
       id-token: write      # WIF to read AR digests
