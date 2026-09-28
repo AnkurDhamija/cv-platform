@@ -1,16 +1,43 @@
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: public-api, namespace: {{ .Values.namespace }}, labels: { app: public-api } }
+metadata:
+  name: public-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: public-api
+    app.kubernetes.io/name: public-api
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: cv-platform
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 spec:
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicas }}
   {{- end }}
   selector: { matchLabels: { app: public-api } }
   template:
-    metadata: { labels: { app: public-api } }
+    metadata:
+      labels:
+        app: public-api
+        app.kubernetes.io/name: public-api
+        app.kubernetes.io/component: frontend
+        app.kubernetes.io/part-of: cv-platform
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
       securityContext: { runAsNonRoot: true, runAsUser: 65532, seccompProfile: { type: RuntimeDefault } }
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector: { matchLabels: { app: public-api } }
       containers:
         - name: public-api
           image: {{ include "cvp.image" .Values.image | quote }}

@@ -1,16 +1,43 @@
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: cv-processor, namespace: {{ .Values.namespace }}, labels: { app: cv-processor } }
+metadata:
+  name: cv-processor
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: cv-processor
+    app.kubernetes.io/name: cv-processor
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: cv-platform
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 spec:
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicas }}
   {{- end }}
   selector: { matchLabels: { app: cv-processor } }
   template:
-    metadata: { labels: { app: cv-processor } }
+    metadata:
+      labels:
+        app: cv-processor
+        app.kubernetes.io/name: cv-processor
+        app.kubernetes.io/component: backend
+        app.kubernetes.io/part-of: cv-platform
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
       securityContext: { runAsNonRoot: true, runAsUser: 65532, seccompProfile: { type: RuntimeDefault } }
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector: { matchLabels: { app: cv-processor } }
       containers:
         - name: cv-processor
           image: {{ include "cvp.image" .Values.image | quote }}
@@ -48,5 +75,14 @@ spec:
 ---
 apiVersion: v1
 kind: Service
-metadata: { name: cv-processor, namespace: {{ .Values.namespace }}, labels: { app: cv-processor } }
+metadata:
+  name: cv-processor
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: cv-processor
+    app.kubernetes.io/name: cv-processor
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: cv-platform
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 spec: { selector: { app: cv-processor }, ports: [{ port: 8081, targetPort: {{ .Values.containerPort }} }] }
