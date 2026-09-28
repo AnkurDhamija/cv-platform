@@ -1,0 +1,33 @@
+# Postgres + MinIO (backend): accept ingress ONLY from cv-processor.
+# They need no egress except DNS (already granted), so none is opened here.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-ingress-from-cv-processor
+  namespace: backend
+spec:
+  podSelector:
+    matchLabels: { app: postgres }
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app: cv-processor }
+      ports:
+        - { protocol: TCP, port: 5432 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: minio-ingress-from-cv-processor
+  namespace: backend
+spec:
+  podSelector:
+    matchLabels: { app: minio }
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app: cv-processor }
+      ports:
+        - { protocol: TCP, port: 9000 }

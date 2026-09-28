@@ -1,0 +1,29 @@
+{{- if .Values.autoscaling.enabled }}
+# HorizontalPodAutoscaler for the STATELESS cv-processor. Scales on CPU (and
+# optionally memory) against the resource requests set in values. The Deployment
+# omits .spec.replicas while this is enabled, so the HPA solely owns the count.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: cv-processor
+  namespace: {{ .Values.namespace }}
+  labels: { app: cv-processor }
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cv-processor
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }} }
+    {{- with .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target: { type: Utilization, averageUtilization: {{ . }} }
+    {{- end }}
+{{- end }}

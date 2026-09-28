@@ -1,0 +1,34 @@
+# Allow Prometheus (monitoring namespace) to scrape the app pods' /metrics.
+# Scoped to the exact app pods + their http ports. Does NOT affect verify (e):
+# that concerns frontend pods reaching cv-processor; monitoring is a separate ns.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-monitoring-scrape
+  namespace: frontend
+spec:
+  podSelector:
+    matchLabels: { app: public-api }
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+      ports:
+        - { protocol: TCP, port: 8080 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-monitoring-scrape
+  namespace: backend
+spec:
+  podSelector:
+    matchLabels: { app: cv-processor }
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+      ports:
+        - { protocol: TCP, port: 8081 }

@@ -1,0 +1,11 @@
+apiVersion: v2
+name: cv-platform-backend
+description: >-
+  Backend services for the CV platform: cv-processor (internal), Postgres, and an
+  optional local S3 mock. cv-processor runs under its own namespace and
+  Workload-Identity service account (cvproc-gsa) with objectAdmin on the CV bucket;
+  it writes to real GCS keylessly. The DB credential comes from External Secrets
+  (managed outside this chart). Deployed by immutable image digest (GitOps).
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

@@ -1,0 +1,27 @@
+# Backend — TEST environment (template; project-per-env recommended).
+# Fill <TEST_PROJECT_ID>; confirm bucket/GSA names (suffix if a shared project).
+gcsBucket: <TEST_PROJECT_ID>-cvs-test
+
+image:
+  repository: europe-west1-docker.pkg.dev/<TEST_PROJECT_ID>/cv-platform-images/cv-processor
+  tag: latest
+  digest: ""
+
+serviceAccount:
+  gsa: cvproc-gsa@<TEST_PROJECT_ID>.iam.gserviceaccount.com
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+externalSecrets:
+  projectID: <TEST_PROJECT_ID>
+  clusterName: cv-platform-test
+
+networkPolicies:
+  enabled: true      # enforce in test

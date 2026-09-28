@@ -1,0 +1,27 @@
+# kind cluster for the CV platform.
+# Default CNI (kindnet) is DISABLED because it does not enforce NetworkPolicy.
+# cluster-up.sh installs Calico instead, which enforces default-deny policies
+# (Part 4 network segmentation depends on this).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: cv-platform
+networking:
+  disableDefaultCNI: true
+  podSubnet: "192.168.0.0/16"   # Calico default
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # Expose public-api on localhost:8080 for the reviewer's curl examples.
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
+  - role: worker
+  - role: worker
+containerdConfigPatches:
+  # Point the cluster at the local registry started by registry-up.sh.
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]
+      endpoint = ["http://kind-registry:5000"]
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."kind-registry:5000"]
+      endpoint = ["http://kind-registry:5000"]

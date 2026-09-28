@@ -1,0 +1,10 @@
+apiVersion: v2
+name: cv-platform-frontend
+description: >-
+  Frontend service (public-api) for the CV platform. Public entry point behind a
+  LoadBalancer; forwards uploads to cv-processor. Runs under its own namespace and
+  Workload-Identity service account (pubapi-gsa) which has NO storage access.
+  Deployed by immutable image digest (CI writes it into values.yaml — GitOps).
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

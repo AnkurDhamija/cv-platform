@@ -1,0 +1,20 @@
+# Keeps SHA-pinned GitHub Actions (and Python deps) current, so pinning does
+# not mean going stale. Dependabot rewrites the pinned SHA + version comment.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+  - package-ecosystem: pip
+    directory: "/services/public-api"
+    schedule: { interval: weekly }
+  - package-ecosystem: pip
+    directory: "/services/cv-processor"
+    schedule: { interval: weekly }
+  - package-ecosystem: docker
+    directory: "/services/public-api"
+    schedule: { interval: weekly }
+  - package-ecosystem: docker
+    directory: "/services/cv-processor"
+    schedule: { interval: weekly }

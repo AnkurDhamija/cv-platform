@@ -1,0 +1,45 @@
+# cv-processor (backend):
+#  - INGRESS: allow ONLY from public-api in frontend (namespace AND pod match).
+#             => any other pod in frontend is denied (verify check (e)).
+#  - EGRESS : allow ONLY to Postgres + MinIO in backend (plus DNS).
+#             => cannot reach the internet (verify check (d)).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cv-processor-ingress-from-public-api
+  namespace: backend
+spec:
+  podSelector:
+    matchLabels: { app: cv-processor }
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        # Single peer with BOTH selectors = pods labelled app=public-api
+        # located in the frontend namespace. This is the AND we rely on.
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: frontend }
+          podSelector:
+            matchLabels: { app: public-api }
+      ports:
+        - { protocol: TCP, port: 8081 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cv-processor-egress-to-data
+  namespace: backend
+spec:
+  podSelector:
+    matchLabels: { app: cv-processor }
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: { app: postgres }
+      ports:
+        - { protocol: TCP, port: 5432 }
+    - to:
+        - podSelector:
+            matchLabels: { app: minio }
+      ports:
+        - { protocol: TCP, port: 9000 }

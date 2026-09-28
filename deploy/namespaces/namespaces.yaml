@@ -1,0 +1,23 @@
+# Two namespaces form the primary trust boundary.
+# Labels are consumed by NetworkPolicies (namespaceSelector) and by Kyverno
+# policy scoping. Pod Security Admission is set to 'restricted' as defence in
+# depth alongside the Kyverno security-context policy.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: frontend
+  labels:
+    kubernetes.io/metadata.name: frontend
+    trust-zone: public
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: backend
+  labels:
+    kubernetes.io/metadata.name: backend
+    trust-zone: private
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest

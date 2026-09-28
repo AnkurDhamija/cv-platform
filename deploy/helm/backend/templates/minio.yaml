@@ -1,0 +1,26 @@
+{{- if .Values.minio.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: minio, namespace: {{ .Values.namespace }}, labels: { app: minio } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: minio } }
+  template:
+    metadata: { labels: { app: minio } }
+    spec:
+      containers:
+        - name: minio
+          image: {{ .Values.minio.image | quote }}
+          env:
+            - { name: HTTP_PORT, value: "9000" }
+            - { name: initialBuckets, value: "cvs" }
+            - { name: JAVA_TOOL_OPTIONS, value: "-Djava.io.tmpdir=/tmp" }
+          ports: [{ containerPort: 9000 }]
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: minio, namespace: {{ .Values.namespace }}, labels: { app: minio } }
+spec: { selector: { app: minio }, ports: [{ port: 9000, targetPort: 9000 }] }
+{{- end }}

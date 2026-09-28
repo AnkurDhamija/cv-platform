@@ -1,0 +1,64 @@
+# Two SLOs with recording + multi-window burn-rate alerts (Part 6).
+#
+# SLO 1 — Availability: >= 99% of public-api requests succeed (non-5xx), 30d.
+# SLO 2 — Latency: 95% of POST /cvs complete in < 1s.
+#
+# Metric names come from prometheus_flask_exporter:
+#   flask_http_request_total{status,endpoint}
+#   flask_http_request_duration_seconds_bucket{method,endpoint,le}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cv-platform-slos
+  namespace: monitoring
+  labels: { release: kube-prometheus-stack }
+spec:
+  groups:
+    - name: public-api-slo-recording
+      interval: 30s
+      rules:
+        # 5xx error ratio over several windows (for burn-rate alerts).
+        - record: job:public_api_error_ratio:rate5m
+          expr: |
+            sum(rate(flask_http_request_total{status=~"5..",endpoint!="prometheus_metrics"}[5m]))
+            /
+            clamp_min(sum(rate(flask_http_request_total{endpoint!="prometheus_metrics"}[5m])), 1)
+        - record: job:public_api_error_ratio:rate1h
+          expr: |
+            sum(rate(flask_http_request_total{status=~"5..",endpoint!="prometheus_metrics"}[1h]))
+            /
+            clamp_min(sum(rate(flask_http_request_total{endpoint!="prometheus_metrics"}[1h])), 1)
+        # p95 latency of POST /cvs (endpoint 'upload_cv').
+        - record: job:public_api_post_cvs_p95:5m
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(flask_http_request_duration_seconds_bucket{exported_endpoint="upload_cv"}[5m])))
+
+    - name: public-api-slo-alerts
+      rules:
+        # SLO 1 — fast burn: 1% budget (99% SLO) burned quickly on 5m and 1h.
+        - alert: PublicAPIAvailabilityFastBurn
+          expr: |
+            job:public_api_error_ratio:rate5m > (14.4 * 0.01)
+            and job:public_api_error_ratio:rate1h > (14.4 * 0.01)
+          for: 2m
+          labels: { severity: page, slo: availability }
+          annotations:
+            summary: "public-api burning the availability error budget fast"
+            description: "5xx ratio >14.4x budget on 5m and 1h windows (SLO 99%)."
+        # SLO 1 — slow burn.
+        - alert: PublicAPIAvailabilitySlowBurn
+          expr: job:public_api_error_ratio:rate1h > (3 * 0.01)
+          for: 15m
+          labels: { severity: ticket, slo: availability }
+          annotations:
+            summary: "public-api error budget slow burn"
+            description: "5xx ratio >3x budget on the 1h window (SLO 99%)."
+        # SLO 2 — latency.
+        - alert: PublicAPIPostCVsLatencyHigh
+          expr: job:public_api_post_cvs_p95:5m > 1
+          for: 10m
+          labels: { severity: ticket, slo: latency }
+          annotations:
+            summary: "POST /cvs p95 latency above 1s"
+            description: "p95 of POST /cvs is {{ $value | humanizeDuration }} (SLO < 1s)."

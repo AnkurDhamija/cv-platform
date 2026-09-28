@@ -1,0 +1,63 @@
+# public-api Deployment — namespace frontend.
+# Image is pinned by DIGEST (deploy-by-digest, Part 3). scripts/set-digests.sh
+# writes the real digest after the image is built+pushed+signed.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: public-api
+  namespace: frontend
+  labels: { app: public-api }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: public-api }
+  template:
+    metadata:
+      labels: { app: public-api }
+    spec:
+      # No API access needed from the pod -> drop the token (Part 2).
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: public-api
+          image: localhost:5001/public-api@sha256:9df18ef32eed07efce285fe8566c55fd47a0213874c297f23d768fde3758a9af
+          ports: [{ containerPort: 8080 }]
+          env:
+            - name: CV_PROCESSOR_URL
+              value: "http://cv-processor.backend.svc.cluster.local:8081"
+            - name: MAX_UPLOAD_BYTES
+              value: "10485760"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { cpu: 250m, memory: 256Mi }
+          livenessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: public-api
+  namespace: frontend
+  labels: { app: public-api }
+spec:
+  type: NodePort
+  selector: { app: public-api }
+  ports:
+    - { name: http, port: 8080, targetPort: 8080, nodePort: 30080 }

@@ -1,0 +1,41 @@
+# Enforce the hardened pod security context from Part 2 at admission time.
+# ENFORCE mode: a violating pod is REJECTED (proves verify check (b)).
+# Scoped to the frontend + backend namespaces.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-hardened-security-context
+  annotations:
+    policies.kyverno.io/title: Require hardened securityContext
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Rejects workloads in frontend/backend unless they run as non-root, use a
+      read-only root filesystem, drop ALL capabilities, disable privilege
+      escalation, and set seccompProfile RuntimeDefault.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: check-security-context
+      match:
+        any:
+          - resources:
+              kinds: ["Pod"]
+              namespaces: ["frontend", "backend"]
+      validate:
+        message: >-
+          Pods must set runAsNonRoot=true (pod-level), readOnlyRootFilesystem=true,
+          allowPrivilegeEscalation=false, capabilities.drop=[ALL],
+          seccompProfile.type=RuntimeDefault.
+        pattern:
+          spec:
+            securityContext:
+              runAsNonRoot: true
+              =(seccompProfile):
+                type: RuntimeDefault
+            containers:
+              - =(securityContext):
+                  readOnlyRootFilesystem: true
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: ["ALL"]

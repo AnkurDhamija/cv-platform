@@ -1,0 +1,22 @@
+# App-of-apps: the single Application the reviewer applies; it renders the
+# child Applications in deploy/argocd/apps/, which own each platform component.
+# __REPO_URL__ is substituted by scripts/gitops-install.sh from the git remote.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cv-platform-root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: __REPO_URL__
+    targetRevision: HEAD
+    path: deploy/argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: ["CreateNamespace=false"]

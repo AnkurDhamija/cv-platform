@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: public-api, namespace: frontend, labels: { app: public-api } }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: public-api } }
+  template:
+    metadata: { labels: { app: public-api } }
+    spec:
+      serviceAccountName: public-api
+      securityContext: { runAsNonRoot: true, runAsUser: 65532, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: public-api
+          image: europe-west1-docker.pkg.dev/project-b3ca7570-d2b6-41c3-aaa/cv-platform-images/public-api:v1
+          ports: [{ containerPort: 8080 }]
+          env:
+            - { name: CV_PROCESSOR_URL, value: "http://cv-processor.backend.svc.cluster.local:8081" }
+            - { name: MAX_UPLOAD_BYTES, value: "10485760" }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+          readinessProbe: { httpGet: { path: /health, port: 8080 }, initialDelaySeconds: 5, periodSeconds: 10 }
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: public-api, namespace: frontend, labels: { app: public-api } }
+spec: { type: LoadBalancer, selector: { app: public-api }, ports: [{ port: 80, targetPort: 8080 }] }

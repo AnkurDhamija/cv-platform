@@ -1,0 +1,80 @@
+# =============================================================================
+# Frontend (public-api) — COMMON values (environment-agnostic).
+# Per-environment values live in values-<env>.yaml. ALWAYS render with both, e.g.
+#   helm template fe deploy/helm/frontend -f deploy/helm/frontend/values.yaml \
+#     -f deploy/helm/frontend/values-dev.yaml
+# The Argo app selects the env by listing both files in .spec.source.helm.valueFiles.
+#
+# IMAGE TAG POLICY: CI pins the immutable sha256 digest into the ENV file
+# (values-<env>.yaml). `digest` takes precedence over `tag`.
+#
+# PRODUCTION KNOBS: probes + resources are set here (safe defaults for every
+# env, including local kind). autoscaling (HPA) and podDisruptionBudget default
+# to DISABLED here and are switched ON per environment — so the local/kind stack
+# is never affected and needs no metrics-server.
+# =============================================================================
+namespace: frontend
+
+serviceAccount:
+  name: public-api
+  # gsa: set per environment
+
+maxUploadBytes: "10485760"
+cvProcessorUrl: "http://cv-processor.backend.svc.cluster.local:8081"
+
+containerPort: 8080
+
+image:
+  # repository + tag come from the env file; digest is pinned there by CI.
+  digest: ""
+
+# Baseline replica count. IGNORED when autoscaling.enabled=true (the HPA owns the
+# replica count; the Deployment then omits .spec.replicas so the two never fight).
+replicas: 2
+
+# --- Health probes (Part 6) --------------------------------------------------
+# liveness = "restart me if wedged"; readiness = "route traffic only when ready".
+livenessProbe:
+  enabled: true
+  path: /health
+  initialDelaySeconds: 10
+  periodSeconds: 15
+  timeoutSeconds: 2
+  failureThreshold: 3
+readinessProbe:
+  enabled: true
+  path: /health
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+# --- Resource requests + limits ----------------------------------------------
+# Requests are also what the HPA measures CPU utilisation against, so they must
+# be set for autoscaling to work. Kept small so 1 dev node comfortably fits.
+resources:
+  requests:
+    cpu: 100m       # ~0.1 vCPU steady state for a Flask proxy
+    memory: 128Mi   # headroom above the ~80–100Mi a Flask+Prometheus worker uses
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# --- Horizontal Pod Autoscaler (off here; on per env) ------------------------
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  # targetMemoryUtilizationPercentage: 80   # uncomment to add a memory target
+
+# --- Pod Disruption Budget (off here; on per env) ----------------------------
+# Keeps at least minAvailable pods up during voluntary disruptions (node drain,
+# upgrade). Set minAvailable OR maxUnavailable, not both.
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1
+
+networkPolicies:
+  enabled: false     # env files may turn this on

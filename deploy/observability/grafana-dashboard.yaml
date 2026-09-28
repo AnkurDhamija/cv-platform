@@ -1,0 +1,56 @@
+# Grafana dashboard auto-imported by the kube-prometheus-stack sidecar
+# (label grafana_dashboard: "1"). Shows service health + both SLOs.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cv-platform-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  cv-platform.json: |
+    {
+      "title": "CV Platform — Service Health & SLOs",
+      "uid": "cv-platform",
+      "schemaVersion": 39,
+      "editable": true,
+      "time": { "from": "now-1h", "to": "now" },
+      "panels": [
+        {
+          "type": "stat", "title": "public-api up",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "targets": [{ "expr": "up{job=\"public-api\"}", "refId": "A" }]
+        },
+        {
+          "type": "stat", "title": "cv-processor up",
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "targets": [{ "expr": "up{job=\"cv-processor\"}", "refId": "A" }]
+        },
+        {
+          "type": "stat", "title": "Availability (5m, SLO 99%)",
+          "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } },
+          "gridPos": { "h": 4, "w": 12, "x": 12, "y": 0 },
+          "targets": [{ "expr": "1 - job:public_api_error_ratio:rate5m", "refId": "A" }]
+        },
+        {
+          "type": "timeseries", "title": "Request rate by endpoint (public-api)",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "targets": [{
+            "expr": "sum by (endpoint) (rate(flask_http_request_total[5m]))",
+            "legendFormat": "{{endpoint}}", "refId": "A"
+          }]
+        },
+        {
+          "type": "timeseries", "title": "5xx error ratio (SLO burn)",
+          "fieldConfig": { "defaults": { "unit": "percentunit" } },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "targets": [{ "expr": "job:public_api_error_ratio:rate5m", "refId": "A" }]
+        },
+        {
+          "type": "timeseries", "title": "POST /cvs p95 latency (SLO < 1s)",
+          "fieldConfig": { "defaults": { "unit": "s" } },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+          "targets": [{ "expr": "job:public_api_post_cvs_p95:5m", "refId": "A" }]
+        }
+      ]
+    }

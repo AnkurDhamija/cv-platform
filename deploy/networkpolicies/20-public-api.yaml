@@ -1,0 +1,35 @@
+# public-api (frontend):
+#  - INGRESS: allow external traffic on 8080 (public entry point).
+#  - EGRESS : allow ONLY to cv-processor in backend (plus DNS from 10-allow-dns).
+#             No internet egress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: public-api-ingress
+  namespace: frontend
+spec:
+  podSelector:
+    matchLabels: { app: public-api }
+  policyTypes: ["Ingress"]
+  ingress:
+    # Empty 'from' = allow from all sources (external via NodePort/ingress).
+    - ports:
+        - { protocol: TCP, port: 8080 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: public-api-egress-to-cv-processor
+  namespace: frontend
+spec:
+  podSelector:
+    matchLabels: { app: public-api }
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: backend }
+          podSelector:
+            matchLabels: { app: cv-processor }
+      ports:
+        - { protocol: TCP, port: 8081 }

@@ -1,0 +1,23 @@
+# Frontend — TEST environment (template; project-per-env recommended).
+# Fill <TEST_PROJECT_ID> and confirm the GSA name (suffix if a shared project).
+replicas: 2
+
+image:
+  repository: europe-west1-docker.pkg.dev/<TEST_PROJECT_ID>/cv-platform-images/public-api
+  tag: latest
+  digest: ""         # CI pins per build
+
+serviceAccount:
+  gsa: pubapi-gsa@<TEST_PROJECT_ID>.iam.gserviceaccount.com
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicies:
+  enabled: true      # enforce in test

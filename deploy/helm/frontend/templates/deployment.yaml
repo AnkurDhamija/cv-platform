@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: public-api, namespace: {{ .Values.namespace }}, labels: { app: public-api } }
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicas }}
+  {{- end }}
+  selector: { matchLabels: { app: public-api } }
+  template:
+    metadata: { labels: { app: public-api } }
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      securityContext: { runAsNonRoot: true, runAsUser: 65532, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: public-api
+          image: {{ include "cvp.image" .Values.image | quote }}
+          ports: [{ containerPort: {{ .Values.containerPort }} }]
+          env:
+            - { name: CV_PROCESSOR_URL, value: {{ .Values.cvProcessorUrl | quote }} }
+            - { name: MAX_UPLOAD_BYTES, value: {{ .Values.maxUploadBytes | quote }} }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+          {{- with .Values.readinessProbe }}
+          {{- if .enabled }}
+          readinessProbe:
+            httpGet: { path: {{ .path }}, port: {{ $.Values.containerPort }} }
+            initialDelaySeconds: {{ .initialDelaySeconds }}
+            periodSeconds: {{ .periodSeconds }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+          {{- end }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          {{- if .enabled }}
+          livenessProbe:
+            httpGet: { path: {{ .path }}, port: {{ $.Values.containerPort }} }
+            initialDelaySeconds: {{ .initialDelaySeconds }}
+            periodSeconds: {{ .periodSeconds }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+          {{- end }}
+          {{- end }}
+          resources:
+            requests: { cpu: {{ .Values.resources.requests.cpu }}, memory: {{ .Values.resources.requests.memory }} }
+            limits: { cpu: {{ .Values.resources.limits.cpu }}, memory: {{ .Values.resources.limits.memory }} }
+      volumes: [{ name: tmp, emptyDir: {} }]

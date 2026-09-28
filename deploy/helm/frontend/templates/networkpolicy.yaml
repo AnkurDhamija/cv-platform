@@ -1,0 +1,22 @@
+{{- if .Values.networkPolicies.enabled }}
+# Frontend segmentation (INGRESS). Default-deny ingress; public-api reachable only
+# on :8080. Egress is left unrestricted on GKE: Dataplane V2 + NodeLocal DNSCache
+# make a strict egress default-deny break DNS, and the Cilium CRD needed to allow
+# the host DNS path is not exposed on GKE. Egress "no-internet" is enforced and
+# proven on the local kind cluster (make verify) and documented for the GCP target.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny-ingress, namespace: {{ .Values.namespace }} }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: public-api, namespace: {{ .Values.namespace }} }
+spec:
+  podSelector: { matchLabels: { app: public-api } }
+  policyTypes: [Ingress]
+  ingress:
+    - ports: [{ port: 8080, protocol: TCP }]   # external LB clients
+{{- end }}

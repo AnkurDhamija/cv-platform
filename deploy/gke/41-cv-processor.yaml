@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: cv-processor, namespace: backend, labels: { app: cv-processor } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: cv-processor } }
+  template:
+    metadata: { labels: { app: cv-processor } }
+    spec:
+      serviceAccountName: cv-processor
+      securityContext: { runAsNonRoot: true, runAsUser: 65532, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: cv-processor
+          image: europe-west1-docker.pkg.dev/project-b3ca7570-d2b6-41c3-aaa/cv-platform-images/cv-processor:v2
+          ports: [{ containerPort: 8081 }]
+          env:
+            # Native GCS via Workload Identity (KSA cv-processor -> cvproc-gsa). Keyless: no keys, no HMAC.
+            - { name: GCS_BUCKET, value: "project-b3ca7570-d2b6-41c3-aaa-cvs-dev" }
+          envFrom: [{ secretRef: { name: cv-db-credentials } }]
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+          readinessProbe: { httpGet: { path: /health, port: 8081 }, initialDelaySeconds: 5, periodSeconds: 10 }
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: cv-processor, namespace: backend, labels: { app: cv-processor } }
+spec: { selector: { app: cv-processor }, ports: [{ port: 8081, targetPort: 8081 }] }

@@ -1,0 +1,99 @@
+# =============================================================================
+# Backend (cv-processor + Postgres) — COMMON values (environment-agnostic).
+# Per-environment values live in values-<env>.yaml. ALWAYS render with both, e.g.
+#   helm template be deploy/helm/backend -f deploy/helm/backend/values.yaml \
+#     -f deploy/helm/backend/values-dev.yaml
+#
+# IMAGE TAG POLICY: CI pins the immutable sha256 digest into the ENV file.
+# The live cv-db-credentials secret is provided by External Secrets (managed
+# outside this chart unless externalSecrets.enabled is set per env).
+#
+# PRODUCTION KNOBS apply to the STATELESS cv-processor only. Postgres + MinIO are
+# single-instance stateful components and deliberately get no HPA/PDB here.
+# HPA + PDB default OFF and are switched ON per environment (keeps local/kind and
+# its lack of metrics-server unaffected).
+# =============================================================================
+namespace: backend
+
+serviceAccount:
+  name: cv-processor
+  # gsa: set per environment
+
+containerPort: 8081
+
+# Baseline replicas for cv-processor. IGNORED when autoscaling.enabled=true.
+replicas: 1
+
+postgres:
+  image: postgres:16-alpine
+
+# Local object storage stand-in — OFF on GCP (cv-processor uses real GCS via WI).
+minio:
+  enabled: false
+  image: adobe/s3mock:latest
+
+image:
+  # repository + tag come from the env file; digest is pinned there by CI.
+  digest: ""
+
+# --- Health probes (Part 6) --------------------------------------------------
+livenessProbe:
+  enabled: true
+  path: /health
+  initialDelaySeconds: 10
+  periodSeconds: 15
+  timeoutSeconds: 2
+  failureThreshold: 3
+readinessProbe:
+  enabled: true
+  path: /health
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+# --- Resource requests + limits (also the HPA's CPU baseline) ----------------
+resources:
+  requests:
+    cpu: 150m       # PDF parsing is burstier than the proxy
+    memory: 256Mi   # headroom for pypdf loading a CV into memory
+  limits:
+    cpu: 750m
+    memory: 512Mi
+
+# --- Horizontal Pod Autoscaler (off here; on per env) ------------------------
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 70
+  # targetMemoryUtilizationPercentage: 80
+
+# --- Pod Disruption Budget (off here; on per env) ----------------------------
+# Set minAvailable OR maxUnavailable. minAvailable:1 is safe only when >1 replica
+# is running (autoscaling min >= 2), otherwise it would block node drains.
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1
+
+networkPolicies:
+  enabled: false
+  # cv-processor egress to Google APIs (GCS) over 443. Default = Private Google
+  # Access restricted VIP (true "no open internet"). Widen to ["0.0.0.0/0"] only
+  # if you egress to Google via Cloud NAT public IPs.
+  googleApisCidrs:
+    - 199.36.153.4/30
+    - 199.36.153.8/30
+
+# DB credential via External Secrets (documented; live secret managed outside the
+# chart). Reconcile remoteRef with Secret Manager before enabling.
+externalSecrets:
+  enabled: false
+  secretStoreName: gcp-secret-store
+  serviceAccountName: external-secrets
+  clusterName: cv-platform
+  clusterLocation: europe-west1
+  targetSecret: cv-db-credentials
+  remoteKey: cv-db-credentials
+  # projectID: set per environment

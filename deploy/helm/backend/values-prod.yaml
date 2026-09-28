@@ -1,0 +1,27 @@
+# Backend — PROD environment (template; project-per-env recommended).
+# Fill <PROD_PROJECT_ID>; confirm bucket/GSA names.
+gcsBucket: <PROD_PROJECT_ID>-cvs-prod
+
+image:
+  repository: europe-west1-docker.pkg.dev/<PROD_PROJECT_ID>/cv-platform-images/cv-processor
+  tag: latest
+  digest: ""
+
+serviceAccount:
+  gsa: cvproc-gsa@<PROD_PROJECT_ID>.iam.gserviceaccount.com
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 60
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+externalSecrets:
+  projectID: <PROD_PROJECT_ID>
+  clusterName: cv-platform-prod
+
+networkPolicies:
+  enabled: true      # enforce in prod

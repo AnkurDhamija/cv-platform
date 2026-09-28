@@ -1,0 +1,19 @@
+# Frontend — DEV environment (the one we deploy). Matches the live GKE dev stack.
+replicas: 2
+image:
+  repository: europe-west1-docker.pkg.dev/project-b3ca7570-d2b6-41c3-aaa/cv-platform-images/public-api
+  tag: fb7fde68625f59205cbc0b0374e4c20fbc43e334 # bootstrap; CI pins `digest` below on each build
+  digest: "sha256:902bb684464e5a570e9b9ca46c6442601f6c836a27f2e807c742c42116be606b"
+serviceAccount:
+  gsa: pubapi-gsa@project-b3ca7570-d2b6-41c3-aaa.iam.gserviceaccount.com
+# Production knobs — ON in dev (GKE has metrics-server; PDB survives node drains).
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+networkPolicies:
+  enabled: true # flip to true to enforce segmentation in dev

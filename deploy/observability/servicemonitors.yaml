@@ -1,0 +1,26 @@
+# Tell Prometheus (Operator) to scrape both services on their http port /metrics.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: public-api
+  namespace: monitoring
+  labels: { release: kube-prometheus-stack }
+spec:
+  namespaceSelector: { matchNames: ["frontend"] }
+  selector:
+    matchLabels: { app: public-api }
+  endpoints:
+    - { port: http, path: /metrics, interval: 15s }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cv-processor
+  namespace: monitoring
+  labels: { release: kube-prometheus-stack }
+spec:
+  namespaceSelector: { matchNames: ["backend"] }
+  selector:
+    matchLabels: { app: cv-processor }
+  endpoints:
+    - { port: http, path: /metrics, interval: 15s }

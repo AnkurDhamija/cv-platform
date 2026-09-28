@@ -1,0 +1,20 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+# PodDisruptionBudget — protects availability during VOLUNTARY disruptions
+# (node drain, cluster upgrade, autoscaler scale-down). Keeps the app serving
+# while nodes are recycled. Set minAvailable OR maxUnavailable in values.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: public-api
+  namespace: {{ .Values.namespace }}
+  labels: { app: public-api }
+spec:
+  {{- with .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ . }}
+  {{- end }}
+  {{- with .Values.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ . }}
+  {{- end }}
+  selector:
+    matchLabels: { app: public-api }
+{{- end }}

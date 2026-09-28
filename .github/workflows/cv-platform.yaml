@@ -1,0 +1,267 @@
+# =============================================================================
+# Secure CI/CD pipeline (Part 3) + GitOps CD to GKE (Part 4).
+#
+# Stages: test -> [SAST, SCA, secret-scan, IaC-scan]
+#         -> build to Artifact Registry (immutable :sha) + SBOM + image-scan
+#         -> keyless sign (OIDC) -> pin digests in Helm values (GitOps commit)
+#         -> Argo CD syncs the signed digests to GKE.
+#
+# IMAGE TAG POLICY
+#   * Build tag is the immutable commit SHA (never `latest`/`vN`).
+#   * Deployment is BY DIGEST: CI captures the pushed sha256 digest and writes it
+#     into deploy/helm/cv-platform/values.yaml, then commits (GitOps). The running
+#     workload always equals a signed digest recorded in Git.
+#
+# Hardening:
+#   * Minimal top-level permissions; each job elevates only what it needs.
+#   * Third-party actions pinned by commit SHA (kept fresh by dependabot); the
+#     'pinning-check' job fails on any unpinned use.
+#   * Fork PRs run scans WITHOUT secrets and never build/sign/publish.
+#   * Cloud auth (Artifact Registry) via Workload Identity Federation — no keys.
+# =============================================================================
+name: CV Platform CI/CD
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  pinning-check:
+    name: Actions are SHA-pinned
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - name: Fail on any unpinned 'uses:'
+        run: |
+          if grep -rEn '^\s*uses:\s+[^@]+@[^ ]+' .github/workflows \
+             | grep -vE '@[0-9a-f]{40}(\s|$|#)'; then
+            echo "::error::found action(s) not pinned by commit SHA"; exit 1
+          fi
+          echo "all actions pinned by SHA"
+
+  # ---------------------------------------------------------------------------
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5.1.1
+        with: { python-version: "3.11" }
+      - name: Install + test
+        run: |
+          pip install -r services/public-api/requirements.txt pytest
+          pip install -r services/cv-processor/requirements.txt
+          (cd services/public-api   && PYTHONPATH=. python -m pytest -q)
+          (cd services/cv-processor && PYTHONPATH=. python -m pytest -q)
+
+  # ---------------------------------------------------------------------------
+  sast:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - name: "Semgrep scan (gate: error severity fails)"
+        uses: semgrep/semgrep-action@713efdd345f3035192eaa63f56867b88e63e4e5d # v1
+        with:
+          config: "p/default p/python p/dockerfile p/kubernetes"
+        env:
+          SEMGREP_SEND_METRICS: "off"
+
+  # ---------------------------------------------------------------------------
+  sca:
+    name: Dependency scan (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5.1.1
+        with: { python-version: "3.11" }
+      - name: pip-audit (dependency CVE gate)
+        run: |
+          pip install pip-audit
+          pip-audit -r services/public-api/requirements.txt \
+                    -r services/cv-processor/requirements.txt
+
+  # ---------------------------------------------------------------------------
+  secret-scan:
+    name: Secret scan (Gitleaks, full history)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with: { fetch-depth: 0 }
+      - name: Install + run Gitleaks (gate)
+        run: |
+          VER=8.18.4
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          ./gitleaks detect --source . --redact --no-banner --exit-code 1
+
+  # ---------------------------------------------------------------------------
+  iac-scan:
+    name: IaC scan (Checkov)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      - uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5.1.1
+        with: { python-version: "3.11" }
+      - name: Checkov (report all; gate on app-workload hardening)
+        run: |
+          pip install checkov
+          checkov -d . --quiet --compact --soft-fail
+          checkov -d deploy/base --quiet --compact \
+            --check CKV_K8S_16,CKV_K8S_20,CKV_K8S_22,CKV_K8S_37
+
+  # ---------------------------------------------------------------------------
+  # Build -> Artifact Registry (immutable :sha), SBOM, scan, keyless sign.
+  # Only on push (never fork PRs — no id-token, must not publish).
+  build-sign:
+    name: Build, SBOM, scan, sign (Artifact Registry)
+    runs-on: ubuntu-latest
+    needs: [pinning-check, test, sast, sca, secret-scan, iac-scan]
+    if: github.event_name == 'push' && vars.GCP_WIF_PROVIDER != ''
+    permissions:
+      contents: read
+      id-token: write      # WIF (AR auth) + keyless cosign (OIDC)
+      attestations: write
+    strategy:
+      matrix:
+        service: [public-api, cv-processor]
+    env:
+      IMAGE: europe-west1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/cv-platform-images/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Authenticate to GCP (Workload Identity Federation, keyless)
+        id: auth
+        uses: google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935 # v2.1.5
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+          token_format: access_token
+
+      - uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v3.6.1
+
+      - name: Log in to Artifact Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: europe-west1-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: Build and push (immutable :sha tag)
+        id: build
+        uses: docker/build-push-action@5cd11c3a4ced054e52742c5fd54dca954e0edd85 # v6.7.0
+        with:
+          context: services/${{ matrix.service }}
+          push: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          provenance: true
+          sbom: true
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@59acb6260d9c0ba8f4a2f9d9b48431a222b68e20 # v3.5.0
+      - name: Install syft (SBOM)
+        uses: anchore/sbom-action/download-syft@61119d458adab75f756bc0b9e4bde25725f86a7a # v0.17.2
+
+      - name: Generate SBOM (SPDX)
+        run: syft "${IMAGE}@${{ steps.build.outputs.digest }}" -o spdx-json > sbom-${{ matrix.service }}.json
+
+      - name: Install Trivy (apt repo)
+        run: |
+          sudo apt-get update && sudo apt-get install -y wget gnupg
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key \
+            | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg >/dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" \
+            | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update && sudo apt-get install -y trivy
+      - name: Scan built image (Trivy, gate HIGH/CRITICAL)
+        run: |
+          trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress \
+            --ignorefile .trivyignore "${IMAGE}@${{ steps.build.outputs.digest }}"
+
+      - name: Keyless sign + attest SBOM (OIDC, no keys)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign sign   --yes "${IMAGE}@${{ steps.build.outputs.digest }}"
+          cosign attest --yes --predicate sbom-${{ matrix.service }}.json --type spdxjson "${IMAGE}@${{ steps.build.outputs.digest }}"
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
+        with:
+          name: sbom-${{ matrix.service }}
+          path: sbom-${{ matrix.service }}.json
+
+  # ---------------------------------------------------------------------------
+  # GitOps CD: pin the just-built, signed digests into the Helm values and commit.
+  # Argo CD then syncs those exact digests to GKE. GITHUB_TOKEN pushes do not
+  # re-trigger CI (no loop); [skip ci] is belt-and-suspenders.
+  deploy:
+    name: Deploy to GKE (Helm chart via Argo CD)
+    runs-on: ubuntu-latest
+    needs: [build-sign]
+    # Binds this job to the GitHub Environment named 'dev'. The "Required
+    # reviewers" protection rule on that environment pauses the run here with
+    # a "Review required" gate until an approver signs off (deployment gate).
+    environment: dev
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.GCP_WIF_PROVIDER != ''
+    permissions:
+      contents: write      # commit the values bump back to the repo
+      id-token: write      # WIF to read AR digests
+    steps:
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Authenticate to GCP (WIF)
+        id: auth
+        uses: google-github-actions/auth@71f986410dfbc7added4569d411d040a91dc6935 # v2.1.5
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+          token_format: access_token
+
+      - uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v3.6.1
+      - name: Log in to Artifact Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: europe-west1-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: Set new image digest on the Helm chart (deploy-by-digest)
+        env:
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          command -v yq >/dev/null || { sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64 && sudo chmod +x /usr/local/bin/yq; }
+          base="europe-west1-docker.pkg.dev/${PROJECT}/cv-platform-images"
+          papi=$(docker buildx imagetools inspect "${base}/public-api:${GITHUB_SHA}"   --format '{{json .Manifest.Digest}}' | tr -d '"')
+          cvp=$( docker buildx imagetools inspect "${base}/cv-processor:${GITHUB_SHA}" --format '{{json .Manifest.Digest}}' | tr -d '"')
+          echo "public-api   -> $papi"
+          echo "cv-processor -> $cvp"
+          # Per-service charts, DEV env overlay (the deployed environment).
+          yq -i ".image.digest = \"$papi\" | .image.tag = \"${GITHUB_SHA}\"" deploy/helm/frontend/values-dev.yaml
+          yq -i ".image.digest = \"$cvp\"  | .image.tag = \"${GITHUB_SHA}\"" deploy/helm/backend/values-dev.yaml
+
+      - name: Deploy new image to GKE (release via GitOps - Argo CD syncs the Helm chart)
+        run: |
+          git config user.name  "ci-deployer[bot]"
+          git config user.email "ci-deployer[bot]@users.noreply.github.com"
+          git add deploy/helm/frontend/values-dev.yaml deploy/helm/backend/values-dev.yaml
+          git diff --cached --quiet && { echo "no digest change"; exit 0; }
+          git commit -m "[skip ci] deploy: pin image digests to ${GITHUB_SHA}"
+          git push

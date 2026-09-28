@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cv-platform-frontend
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/AnkurDhamija/cv-platform.git
+    targetRevision: HEAD
+    path: deploy/helm/frontend
+    helm:
+      valueFiles: [values.yaml, values-dev.yaml]   # dev environment
+  destination:
+    server: https://kubernetes.default.svc
+  # The HPA owns the replica count, so the Deployment manifest omits it. Tell
+  # Argo to ignore live replica drift, otherwise every HPA scale event shows as
+  # OutOfSync and selfHeal would fight the autoscaler.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers: [/spec/replicas]
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]

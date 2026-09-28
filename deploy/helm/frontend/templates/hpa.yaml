@@ -1,0 +1,30 @@
+{{- if .Values.autoscaling.enabled }}
+# HorizontalPodAutoscaler — scales public-api on CPU (and optionally memory).
+# Requires resource *requests* (set in values) and a metrics source
+# (metrics-server on kind; built in on GKE). The Deployment omits .spec.replicas
+# while this is enabled, so the HPA is the single owner of the replica count.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: public-api
+  namespace: {{ .Values.namespace }}
+  labels: { app: public-api }
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: public-api
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }} }
+    {{- with .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target: { type: Utilization, averageUtilization: {{ . }} }
+    {{- end }}
+{{- end }}

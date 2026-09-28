@@ -1,0 +1,25 @@
+# =============================================================================
+# .trivyignore — triaged base-image (distroless) OS CVEs.
+#
+# These HIGH CVEs are in Debian 12 OS packages inside
+# gcr.io/distroless/python3-debian12:nonroot. Fixed UPSTREAM in Debian but not
+# yet in the current distroless rebuild, so NOT patchable by us (distroless has
+# no package manager). All are DoS / parser issues not reachable via this
+# service's request path. Application dependencies are scanned + gated at 0 by
+# the pip-audit job. Accepted + time-boxed — re-scan drops each entry once
+# distroless rebuilds with deb12u7/u8.  Review by: 2026-11-01.
+# =============================================================================
+# libexpat1 — memory corruption; no XML parsing in these services
+CVE-2026-76957
+# krb5 — NULL-deref DoS; no Kerberos auth path
+CVE-2026-40355
+# krb5 — integer-underflow DoS
+CVE-2026-40356
+# cpython — http.client excessive-read DoS
+CVE-2025-13836
+# cpython — XML DTD stack overflow; no XML parsing
+CVE-2026-4224
+# cpython — decompression use-after-free
+CVE-2026-6100
+# openssl — PKCS7_verify use-after-free; no PKCS7 verify path
+CVE-2026-45447

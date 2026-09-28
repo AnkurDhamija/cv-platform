@@ -1,0 +1,74 @@
+# cv-processor Deployment — namespace backend.
+# Internal only: reachable from public-api, may reach Postgres + MinIO, must NOT
+# reach the internet (enforced by NetworkPolicy). Image pinned by digest.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cv-processor
+  namespace: backend
+  labels: { app: cv-processor }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: cv-processor }
+  template:
+    metadata:
+      labels: { app: cv-processor }
+    spec:
+      # On GKE this SA is bound via Workload Identity to a GCP SA that can
+      # read/write the GCS bucket; locally MinIO creds come from a Secret.
+      serviceAccountName: cv-processor
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: cv-processor
+          image: localhost:5001/cv-processor@sha256:3e8232a2b19d226a8892ea1c91359f9d45f88f9aaed0946d4bfc948705a92f22
+          ports: [{ containerPort: 8081 }]
+          env:
+            - name: MINIO_ENDPOINT
+              value: "minio.backend.svc.cluster.local:9000"
+            - name: MINIO_BUCKET
+              value: "cvs"
+          envFrom:
+            - secretRef: { name: cv-db-credentials }      # PG_DSN
+            - secretRef: { name: cv-object-credentials }  # MINIO_ACCESS_KEY / MINIO_SECRET_KEY
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits:   { cpu: 500m, memory: 512Mi }
+          livenessProbe:
+            httpGet: { path: /health, port: 8081 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health, port: 8081 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cv-processor
+  namespace: backend
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cv-processor
+  namespace: backend
+  labels: { app: cv-processor }
+spec:
+  selector: { app: cv-processor }
+  ports:
+    - { name: http, port: 8081, targetPort: 8081 }

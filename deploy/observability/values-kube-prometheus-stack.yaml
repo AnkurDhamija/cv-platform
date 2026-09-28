@@ -1,0 +1,31 @@
+# Lean values for local kind. Keeps resource use modest and lets Prometheus
+# discover ServiceMonitors/PrometheusRules across namespaces by our release label.
+grafana:
+  adminPassword: admin            # local only; rotate/secret in cloud
+  defaultDashboardsEnabled: true
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard    # picks up deploy/observability/grafana-dashboard.yaml
+
+prometheus:
+  prometheusSpec:
+    # Discover our ServiceMonitors/Rules regardless of their namespace.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    retention: 6h
+    resources:
+      requests: { cpu: 100m, memory: 400Mi }
+      limits:   { cpu: "1",  memory: 1Gi }
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests: { cpu: 25m, memory: 64Mi }
+      limits:   { cpu: 200m, memory: 128Mi }
+
+# Trim components not needed for this demo to speed up local bring-up.
+kubeEtcd: { enabled: false }
+kubeControllerManager: { enabled: false }
+kubeScheduler: { enabled: false }

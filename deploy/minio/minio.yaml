@@ -1,0 +1,68 @@
+# Object storage (local stand-in for GCS), backend namespace only.
+# Uses adobe/s3mock — a lightweight, S3-compatible mock — because the upstream
+# MinIO container images were withdrawn by the vendor. The S3 API is compatible
+# with the minio client cv-processor uses. Storage is ephemeral (under /tmp),
+# which is sufficient for the local MVP; the GCP target uses real GCS
+# (see terraform/gcp/storage.tf). Served over HTTP on :9000 to match the
+# existing NetworkPolicies and cv-processor's MINIO_ENDPOINT.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: backend
+  labels: { app: minio }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: minio }
+  template:
+    metadata:
+      labels: { app: minio }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: minio
+          image: adobe/s3mock:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: HTTP_PORT,         value: "9000" }
+            - { name: initialBuckets,    value: "cvs" }
+            - { name: JAVA_TOOL_OPTIONS, value: "-Djava.io.tmpdir=/tmp" }
+          ports:
+            - { containerPort: 9000 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits:   { cpu: 750m, memory: 1Gi }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          readinessProbe:
+            httpGet: { path: /, port: 9000 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: 9000 }
+            initialDelaySeconds: 45
+            periodSeconds: 20
+      volumes:
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: backend
+  labels: { app: minio }
+spec:
+  selector: { app: minio }
+  ports:
+    - { name: api, port: 9000, targetPort: 9000 }

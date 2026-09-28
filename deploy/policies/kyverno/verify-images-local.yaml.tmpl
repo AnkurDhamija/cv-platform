@@ -1,0 +1,41 @@
+# =============================================================================
+# LOCAL signature policy (kind). ENFORCE mode. Functionally equivalent to the
+# keyless production policy, but verifies against a locally generated cosign
+# public key (keyless OIDC is unavailable on a laptop). scripts/policies-install.sh
+# substitutes the key placeholder with the generated cosign.pub and applies this.
+# make up signs the local images with the matching private key; make verify
+# then proves an UNSIGNED image is rejected (check (a)).
+# =============================================================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signatures
+  annotations:
+    policies.kyverno.io/title: Verify image signatures (local key-based)
+    policies.kyverno.io/severity: critical
+spec:
+  validationFailureAction: Enforce
+  background: false
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: verify-signed-by-local-key
+      match:
+        any:
+          - resources:
+              kinds: ["Pod"]
+              namespaces: ["frontend", "backend"]
+      verifyImages:
+        - imageReferences:
+            - "*/public-api*"
+            - "*/cv-processor*"
+          mutateDigest: true
+          verifyDigest: true
+          required: true
+          attestors:
+            - count: 1
+              entries:
+                - keys:
+                    publicKeys: |-
+__COSIGN_PUB__
+                    rekor:
+                      ignoreTlog: true

@@ -1,0 +1,19 @@
+# App-of-apps root for the GKE target (separate from the local-kind app-of-apps
+# in deploy/argocd/apps). Apply this ONE object; Argo CD creates and syncs the
+# frontend + backend child Applications in deploy/argocd/gke/apps.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cv-platform
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/AnkurDhamija/cv-platform.git
+    targetRevision: HEAD
+    path: deploy/argocd/gke/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }

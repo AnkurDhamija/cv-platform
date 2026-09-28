@@ -1,0 +1,23 @@
+# Frontend — PROD environment (template; project-per-env recommended).
+# Fill <PROD_PROJECT_ID> and confirm the GSA name.
+replicas: 3          # more headroom in prod
+
+image:
+  repository: europe-west1-docker.pkg.dev/<PROD_PROJECT_ID>/cv-platform-images/public-api
+  tag: latest
+  digest: ""         # CI pins per build
+
+serviceAccount:
+  gsa: pubapi-gsa@<PROD_PROJECT_ID>.iam.gserviceaccount.com
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 60
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+networkPolicies:
+  enabled: true      # enforce in prod

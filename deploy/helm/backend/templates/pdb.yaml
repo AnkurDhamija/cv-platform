@@ -1,0 +1,21 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+# PodDisruptionBudget for the STATELESS cv-processor only. Guards availability
+# during voluntary disruptions (node drain, upgrade). minAvailable:1 is safe
+# because dev/test/prod run autoscaling.minReplicas >= 2. Postgres + MinIO are
+# single-instance and intentionally excluded.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cv-processor
+  namespace: {{ .Values.namespace }}
+  labels: { app: cv-processor }
+spec:
+  {{- with .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ . }}
+  {{- end }}
+  {{- with .Values.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ . }}
+  {{- end }}
+  selector:
+    matchLabels: { app: cv-processor }
+{{- end }}

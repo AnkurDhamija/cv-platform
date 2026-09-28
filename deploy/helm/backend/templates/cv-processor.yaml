@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: cv-processor, namespace: {{ .Values.namespace }}, labels: { app: cv-processor } }
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicas }}
+  {{- end }}
+  selector: { matchLabels: { app: cv-processor } }
+  template:
+    metadata: { labels: { app: cv-processor } }
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      securityContext: { runAsNonRoot: true, runAsUser: 65532, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: cv-processor
+          image: {{ include "cvp.image" .Values.image | quote }}
+          ports: [{ containerPort: {{ .Values.containerPort }} }]
+          env:
+            # Native GCS via Workload Identity (KSA cv-processor -> cvproc-gsa). Keyless: no keys, no HMAC.
+            - { name: GCS_BUCKET, value: {{ .Values.gcsBucket | quote }} }
+          envFrom: [{ secretRef: { name: cv-db-credentials } }]   # provided by External Secrets
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } }
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+          {{- with .Values.readinessProbe }}
+          {{- if .enabled }}
+          readinessProbe:
+            httpGet: { path: {{ .path }}, port: {{ $.Values.containerPort }} }
+            initialDelaySeconds: {{ .initialDelaySeconds }}
+            periodSeconds: {{ .periodSeconds }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+          {{- end }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          {{- if .enabled }}
+          livenessProbe:
+            httpGet: { path: {{ .path }}, port: {{ $.Values.containerPort }} }
+            initialDelaySeconds: {{ .initialDelaySeconds }}
+            periodSeconds: {{ .periodSeconds }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+          {{- end }}
+          {{- end }}
+          resources:
+            requests: { cpu: {{ .Values.resources.requests.cpu }}, memory: {{ .Values.resources.requests.memory }} }
+            limits: { cpu: {{ .Values.resources.limits.cpu }}, memory: {{ .Values.resources.limits.memory }} }
+      volumes: [{ name: tmp, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: cv-processor, namespace: {{ .Values.namespace }}, labels: { app: cv-processor } }
+spec: { selector: { app: cv-processor }, ports: [{ port: 8081, targetPort: {{ .Values.containerPort }} }] }
