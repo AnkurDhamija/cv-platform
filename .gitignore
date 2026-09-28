@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+
+# Secrets — never commit plaintext (Part 4 requirement)
+*.pem
+*.key
+!*.pub
+secrets.yaml
+!deploy/secrets/*sealed*.yaml
+.env
+.env.*
+
+# Generated/sealed secrets output + local signing keys (never commit)
+deploy/secrets/generated/
+.local-keys/
+
+# Build / local
+*.log
+tmp/
+dist/
+build/
+sbom*.json
+*.sig
+kubeconfig
+backups/
+
+# local delivery bundles
+*.zip
