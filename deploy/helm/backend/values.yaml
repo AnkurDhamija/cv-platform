@@ -92,6 +92,7 @@ externalSecrets:
   enabled: false
   secretStoreName: gcp-secret-store
   serviceAccountName: external-secrets
+  gsaName: eso-gsa   # ESO Google SA (Workload Identity); IAM binding lives in terraform/iam
   clusterName: cv-platform
   clusterLocation: europe-west1
   targetSecret: cv-db-credentials
