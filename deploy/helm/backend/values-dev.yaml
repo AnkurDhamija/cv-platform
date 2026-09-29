@@ -16,6 +16,7 @@ podDisruptionBudget:
   enabled: true
   minAvailable: 1
 externalSecrets:
+  enabled: true
   projectID: project-b3ca7570-d2b6-41c3-aaa
 networkPolicies:
   enabled: true # flip to true to enforce segmentation in dev
