@@ -3,3 +3,19 @@ environment    = "dev"
 project_id     = "your-gcp-project-id"
 github_repo    = "owner/repo"
 cv_bucket_name = "your-globally-unique-bucket"
+
+# --- Cluster sizing / lifecycle (manage everything here, not in .tf files) ---
+machine_type        = "e2-standard-2"
+disk_size_gb        = 50
+min_node_count      = 1
+max_node_count      = 3
+release_channel     = "REGULAR"
+deletion_protection = false   # set true in prod
+
+# --- Control-plane (Kubernetes API) access ---
+# Whitelist which source may reach the GKE control-plane endpoint.
+# Lock this to your egress IP / CIDR in EVERY real environment:
+#   single office/bastion host -> "203.0.113.10/32"
+#   corporate range            -> "203.0.113.0/24"
+# 0.0.0.0/0 opens the API to the whole internet — dev-only (see ADR 0005).
+master_authorized_cidr = "203.0.113.10/32"

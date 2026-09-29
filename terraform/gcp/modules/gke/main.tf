@@ -14,7 +14,7 @@ resource "google_container_cluster" "primary" {
   datapath_provider        = "ADVANCED_DATAPATH"
 
   release_channel {
-    channel = "REGULAR"
+    channel = var.release_channel
   }
 
   resource_labels = var.labels
@@ -42,6 +42,8 @@ resource "google_container_cluster" "primary" {
   }
 
   enable_shielded_nodes = true
+
+  deletion_protection = var.deletion_protection
 }
 
 resource "google_service_account" "nodes" {
@@ -50,9 +52,12 @@ resource "google_service_account" "nodes" {
 }
 
 resource "google_container_node_pool" "primary" {
-  name       = "primary"
-  cluster    = google_container_cluster.primary.id
-  node_count = var.node_count
+  name    = "primary"
+  cluster = google_container_cluster.primary.id
+  autoscaling {
+    min_node_count = var.min_node_count
+    max_node_count = var.max_node_count
+  }
   node_locations = length(var.node_locations) > 0 ? var.node_locations : null
 
   management {
@@ -61,7 +66,8 @@ resource "google_container_node_pool" "primary" {
   }
 
   node_config {
-    machine_type    = "e2-standard-2"
+    machine_type    = var.machine_type
+    disk_size_gb    = var.disk_size_gb
     service_account = google_service_account.nodes.email
     oauth_scopes    = ["https://www.googleapis.com/auth/cloud-platform"]
     labels          = var.labels

@@ -18,6 +18,12 @@ module "gke" {
   pods_range_name        = module.network.pods_range_name
   services_range_name    = module.network.services_range_name
   node_count             = var.node_count
+  min_node_count         = var.min_node_count
+  max_node_count         = var.max_node_count
+  deletion_protection    = var.deletion_protection
+  machine_type           = var.machine_type
+  disk_size_gb           = var.disk_size_gb
+  release_channel        = var.release_channel
   master_authorized_cidr = var.master_authorized_cidr
   labels                 = local.labels
   node_locations         = var.node_locations
