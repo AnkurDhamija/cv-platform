@@ -321,7 +321,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Post-deployment validation: confirm Argo CD rolled the NEW digest out and the
-  # app is serving. Read-only kubectl (deployer SA has roles/container.viewer).
+  # app is serving. Errors surface (no silent swallow); connectivity checked first.
   verify-deploy:
     name: ✅ Post-deploy validation
     runs-on: ubuntu-latest
@@ -331,6 +331,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      USE_GKE_GCLOUD_AUTH_PLUGIN: "True"
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       - name: Authenticate to GCP (WIF)
@@ -339,18 +341,24 @@ jobs:
           project_id: ${{ vars.GCP_PROJECT_ID }}
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOYER_SA }}
-      - name: Tooling (gke auth plugin, kubectl, yq)
+      - name: Install kubectl + GKE auth plugin (fail loudly)
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y google-cloud-cli-gke-gcloud-auth-plugin >/dev/null 2>&1 \
-            || sudo apt-get install -y google-cloud-sdk-gke-gcloud-auth-plugin >/dev/null 2>&1 || true
+          set -euo pipefail
+          if ! command -v gke-gcloud-auth-plugin >/dev/null; then
+            curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+            echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list >/dev/null
+            sudo apt-get update -qq
+            sudo apt-get install -y google-cloud-cli-gke-gcloud-auth-plugin
+          fi
+          gke-gcloud-auth-plugin --version
           command -v kubectl >/dev/null || { sudo curl -sSLo /usr/local/bin/kubectl https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl; sudo chmod +x /usr/local/bin/kubectl; }
           command -v yq >/dev/null || { sudo curl -sSLo /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64; sudo chmod +x /usr/local/bin/yq; }
-      - name: Get GKE credentials
-        env: { USE_GKE_GCLOUD_AUTH_PLUGIN: "True" }
+      - name: Get GKE credentials + connectivity check (fail-fast)
         run: |
+          set -euo pipefail
           gcloud container clusters get-credentials cv-platform --region europe-west1 --project "${{ vars.GCP_PROJECT_ID }}" \
             || gcloud container clusters get-credentials cv-platform --zone europe-west1-b --project "${{ vars.GCP_PROJECT_ID }}"
+          echo "connectivity:"; kubectl get ns kube-system -o name
       - name: Wait for the new digest to roll out
         run: |
           set -euo pipefail
@@ -360,9 +368,9 @@ jobs:
           echo "expecting public-api@${want_papi} , cv-processor@${want_cvp}"
           roll() {
             for i in $(seq 1 40); do
-              img=$(kubectl -n "$1" get deploy "$2" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)
+              img=$(kubectl -n "$1" get deploy "$2" -o jsonpath='{.spec.template.spec.containers[0].image}')
               echo "  $2 -> ${img##*@} (try $i)"
-              case "$img" in *"$3"*) return 0 ;; esac
+              case "$img" in *"$3"*) echo "  ✓ $2 rolled"; return 0 ;; esac
               sleep 10
             done
             echo "::error::$2 never rolled to $3"; return 1
@@ -371,10 +379,12 @@ jobs:
           roll backend  cv-processor "$want_cvp"
       - name: Rollout health
         run: |
+          set -euo pipefail
           kubectl -n frontend rollout status deploy/public-api   --timeout=180s
           kubectl -n backend  rollout status deploy/cv-processor --timeout=180s
       - name: Smoke test public endpoint
         run: |
+          set -euo pipefail
           ip=$(kubectl -n frontend get svc public-api -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
           echo "public-api LB: ${ip}"
           for i in $(seq 1 12); do
@@ -398,7 +408,7 @@ jobs:
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with: { fetch-depth: 0 }
-      - name: Revert the deploy commit
+      - name: Revert the deploy commit (fail if push does not land)
         run: |
           set -euo pipefail
           git config user.name  "ci-deployer[bot]"
@@ -408,7 +418,10 @@ jobs:
           echo "reverting ${bad}"
           git revert --no-commit "$bad"
           git commit -m "[skip ci] rollback: revert ${bad} (failed post-deploy validation)"
+          pushed=""
           for i in 1 2 3; do
-            git pull --rebase --autostash origin main && git push && break
+            if git pull --rebase --autostash origin main && git push; then pushed=1; break; fi
             echo "push race, retry $i"; sleep 3
           done
+          [ -n "$pushed" ] || { echo "::error::rollback failed to push revert"; exit 1; }
+          echo "rolled back; Argo will re-sync the previous signed digest"
