@@ -10,6 +10,20 @@
 
 ---
 
+## Architecture
+
+**Platform — GCP, provisioned by Terraform**
+![GCP platform architecture](docs/diagrams/gcp-platform-architecture.png)
+
+**CI/CD — GitHub Actions → GitOps (Argo CD) → GKE**
+![CI/CD pipeline flow](docs/diagrams/cicd-pipeline-flow.png)
+
+**Helm charts — env-agnostic values + per-env overlays**
+![Helm architecture](docs/diagrams/helm-architecture.png)
+
+**Container images — multi-stage, distroless, non-root**
+![Dockerfile architecture](docs/diagrams/dockerfile-architecture.png)
+
 ## What this is
 
 A minimal but genuinely working MVP of a CV-processing system, deployed on a
