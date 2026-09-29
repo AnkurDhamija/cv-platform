@@ -139,7 +139,7 @@ curl -X DELETE http://localhost:8080/cvs/<id>
 | Container hardening (Part 2)      | ✅ done     | Distroless nonroot, digest-pinned, multi-stage, no shell |
 | Local platform / kind (Part 4)    | _✅ done_   |       |
 | NetworkPolicies (Part 4)          | _✅ done_   |       |
-| Policy enforcement (Part 5)       | ✅ done     | Kyverno enforce: signatures + security context |
+| Policy enforcement (Part 5)       | ✅ done     | Kyverno (Argo-managed) enforces hardened securityContext on GKE; images keyless-signed + verifiable; signature-verify policy authored (GKE enforce staged) |
 | Secure CI/CD (Part 3)             | ✅ done     | SAST/SCA/secret/IaC/image scan, gates, SBOM, keyless sign, WIF |
 | GitOps + secrets (Part 4)         | ✅ done     | Argo CD app-of-apps + Sealed Secrets (ESO on GKE) |
 | Observability + SLOs (Part 6)     | ✅ done     | Prom+Grafana, dashboard, 2 SLOs+alerts, PG backup/restore |
@@ -153,13 +153,16 @@ curl -X DELETE http://localhost:8080/cvs/<id>
 
 Honest account of what is fully implemented vs. simplified:
 
-- **Local signature verification runs in Audit mode on kind; Enforced on GKE.**
+- **Image-signature enforcement — status by environment.**
   In-cluster Kyverno cannot reach the host-local registry (`localhost:5001`) to fetch
   the cosign signature (in a pod, `localhost` is the pod itself), so on kind the
   `verify-image-signatures` policy is set to Audit — it reports violations without
   blocking deployments, and `make verify` check (a) is therefore not asserted locally.
-  The same policy is **Enforced on GKE** against Artifact Registry with keyless cosign
-  (see `docs/EVIDENCE.md`). Local checks (b)-(e) pass.
+  On **GKE**, images are keyless-signed and `cosign verify` passes against the CI
+  issuer+workflow subject; the **hardened-securityContext** policy is enforced live
+  (Kyverno via Argo CD — see `docs/EVIDENCE.md`), and enforcing the keyless
+  **signature** policy on GKE (Kyverno authenticating to the private Artifact
+  Registry) is the documented next step. Local checks (b)-(e) pass.
 
 - **GCP Terraform is applied and live.** Private GKE, Artifact Registry, the GCS bucket, and least-privilege Workload Identity were applied to a real project; `cv-processor` reads/writes GCS keylessly while `pubapi-gsa` is denied (evidence in `docs/EVIDENCE.md`). Run `terraform destroy` to stop billing.
 

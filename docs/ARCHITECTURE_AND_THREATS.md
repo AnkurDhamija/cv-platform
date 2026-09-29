@@ -74,7 +74,7 @@ flowchart TB
     CP --> PGc
   end
 
-  CP -->|Workload Identity, objectAdmin| GCS[(GCS bucket\nversioned, CMEK,\n30-day lifecycle)]
+  CP -->|Workload Identity, objectAdmin| GCS[(GCS bucket\nversioned, uniform access,\n30-day lifecycle)]
   PA -. no IAM path .-> GCS
 
   GH[GitHub Actions] -->|WIF OIDC, keyless| AR[(Artifact Registry\nsigned images)]
@@ -97,8 +97,8 @@ Manager via External Secrets Operator** rather than Sealed Secrets.
   and security-context policy in one engine with one policy language.
 
 **Choice:** keep **Kyverno** as the primary, portable control so local and cloud
-enforce identically, and additionally enable **Binary Authorization** on GKE as
-defence in depth (belt-and-braces at the managed layer). Using only one, we'd
+enforce identically, and **plan Binary Authorization** on GKE as
+additional defence in depth (deferred — see ADR 0005). Using only one, we'd
 pick Kyverno for portability.
 
 ## 4. Threat model
@@ -129,7 +129,7 @@ runner's cloud credentials, or (b) tamper with published images.
 | --- | --- |
 | **Exfiltrating cloud creds** | There are **no static cloud keys** to steal — GCP auth is Workload Identity Federation, and the OIDC token is only minted for `push` events on our repo/branch, not for fork PRs. The `attribute_condition` on the WIF provider rejects any other repository. |
 | **PR from a fork reading secrets** | `pull_request` runs from forks get **no repository secrets** and no `id-token`. The `build-sign` and `cloud-auth-demo` jobs are guarded `if: github.event_name == 'push'`, so a fork PR can only run scans, never publish or authenticate. |
-| **Tampering with images** | Publishing requires `packages: write` + `id-token: write`, granted only on trusted `push`. Images are **keyless-signed** by the CI identity; Kyverno/Binary Authorization admit **only** images signed by exactly our issuer+workflow subject, so an unsigned or differently-signed image is rejected at deploy time. |
+| **Tampering with images** | Publishing requires `packages: write` + `id-token: write`, granted only on trusted `push`. Images are **keyless-signed** by the CI identity; Kyverno admits **only** images signed by exactly our issuer+workflow subject, so an unsigned or differently-signed image is rejected at deploy time. |
 | **Supply-chain injection via a tampered action** | Third-party actions are **pinned by commit SHA** (a moved tag can't swap code in), maintained by Dependabot, and a `pinning-check` job fails the build on any unpinned use. |
 | **Malicious dependency / secret in the diff** | SAST (Semgrep), SCA (Trivy), secret scanning (Gitleaks, full history), and IaC scanning gate every PR before merge. |
 

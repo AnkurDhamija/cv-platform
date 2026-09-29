@@ -13,7 +13,7 @@ signatures on GKE only) **Binary Authorization**.
 ## Decision
 Use **Kyverno** as the single admission engine for both signature verification
 and security-context enforcement, in **enforce** mode, in both environments. On
-GKE, additionally enable **Binary Authorization** as defence in depth.
+GKE, **Binary Authorization** is planned as additional defence in depth (deferred — see ADR 0005).
 
 ## Alternatives considered
 - **OPA Gatekeeper:** powerful and CNCF-graduated, but Rego is a steeper language

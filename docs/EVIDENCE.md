@@ -176,3 +176,38 @@ Both services `up`; availability 99.4% against the 99% SLO; 5xx burn-rate and PO
 ![GKE pods Running, Argo CD synced, External Secrets Operator, LoadBalancer](screenshots/14-gke-argocd-external-secrets-loadbalancer.png)
 frontend/backend workloads Running; **External Secrets Operator** syncing the DB credential from Secret Manager;
 Argo CD `cv-platform-gke` Synced/Healthy; `public-api` exposed via LoadBalancer (34.140.80.141).
+
+
+## Update — 2026-09-29 (clean rebuild)
+
+After a full `terraform destroy` + `apply` and a fresh GitOps bring-up, the current
+live state is captured below. (A few specifics differ from the dated screenshots
+above: the root Argo app is `cv-platform`, not `cv-platform-gke`, and the
+`public-api` LoadBalancer IP is assigned per deploy — currently `34.78.202.187`.)
+
+### Kyverno — hardened securityContext enforced live on GKE
+![Kyverno rejects a non-hardened pod; app pods + postgres Running](screenshots/15-kyverno-securitycontext-enforce.png)
+
+The `require-hardened-security-context` ClusterPolicy runs in **Enforce** on GKE
+(installed via Argo CD). A rogue non-hardened pod is **rejected** with the policy
+message; the signed, hardened app pods and the exempt `postgres` keep running.
+
+### CI — post-deploy validation + automated rollback
+![Green pipeline: gates, build+sign, deploy, post-deploy validation, rollback skipped](screenshots/16-cicd-postdeploy-validation.png)
+
+End-to-end green run: gates -> build/SBOM/scan/keyless-sign -> deploy-by-digest ->
+**post-deploy validation** (rollout health + LB smoke test) -> **rollback** skipped.
+
+### GitOps — Argo CD app-of-apps, Kyverno managed by GitOps
+![Argo CD: 5 apps all Synced/Healthy](screenshots/17-argocd-apps.png)
+
+Root `cv-platform` (-> `cv-platform-backend` + `cv-platform-frontend`) plus
+`kyverno` and `kyverno-policies`, all **Synced / Healthy** — Kyverno is installed
+and reconciled by Argo CD, not by hand.
+
+### ESO identity codified in Terraform
+![terraform state list shows ESO resources; plan reports no changes](screenshots/18-terraform-eso-apply-clean.png)
+
+`eso-gsa`, its `secretmanager.secretAccessor`, both Workload Identity bindings, and
+the `cv-db-credentials` secret container are Terraform-managed; `terraform plan`
+reports **no changes** (no drift). The secret *value* stays out-of-band.

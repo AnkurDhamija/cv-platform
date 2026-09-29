@@ -30,6 +30,11 @@ pipeline's responsibility ends at Git:
    `deploy/helm/<svc>/values-dev.yaml`** (`[skip ci]`).
 3. **Argo CD** (app-of-apps: a root app owning `frontend` + `backend`) detects the
    commit and syncs the cluster to the new digest, with `selfHeal` and `prune`.
+4. **Post-deploy validation + automated rollback.** A `verify-deploy` job confirms
+   Argo rolled the new digest out healthily (rollout status + LB smoke test); on
+   failure a `rollback` job `git revert`s the deploy commit so Argo re-syncs the
+   previous good digest. The pipeline triggers on `push` to `main` plus
+   `workflow_dispatch`; `[skip ci]` on bot commits prevents loops.
 
 CI is granted **no standing deploy credentials to the cluster**; its WIF identity
 can read Artifact Registry digests, nothing more. A human **approval gate**

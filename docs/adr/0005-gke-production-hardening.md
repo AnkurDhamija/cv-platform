@@ -21,12 +21,15 @@ one set of modules driven per environment by a var-file.
 - **API enablement** (`apis.tf`) so `apply` works on a clean project.
 - **Node autoscaling** in place of a fixed count.
 - **deletion_protection** var — false in dev, true in prod.
+- **ESO identity as IaC** — the Secret Manager `cv-db-credentials` container,
+  `eso-gsa`, its `secretmanager.secretAccessor`, and both Workload Identity
+  bindings live in `modules/iam` (the secret *value* stays out-of-band, never
+  in tfstate).
 
 **Env-gated / deferred (documented, not applied to dev)**
 - **Control-plane exposure** — dev `master_authorized_cidr = 0.0.0.0/0`; **prod must**
   set specific admin CIDRs (VPN/bastion) or `enable_private_endpoint = true` + IAP.
 - **CMEK** — Cloud KMS key for the CV bucket + DB backups.
-- **Secrets in Terraform** — Secret Manager secret + `eso-gsa` + WI binding as IaC.
 - **Node oauth_scopes** — narrow from `cloud-platform` (recreates the pool).
 - **Binary Authorization** — defence-in-depth alongside Kyverno (ADR 0001).
 
