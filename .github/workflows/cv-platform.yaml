@@ -26,9 +26,9 @@ on:
   workflow_dispatch:            # manual trigger (Actions -> Run workflow)
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
-    tags: ["v*"]
+  # push:                     # auto-deploy on push disabled — deploy via "Run workflow"
+  #   branches: [main]
+  #   tags: ["v*"]
 
 permissions:
   contents: read
