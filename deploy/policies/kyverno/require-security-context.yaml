@@ -22,6 +22,14 @@ spec:
           - resources:
               kinds: ["Pod"]
               namespaces: ["frontend", "backend"]
+      exclude:
+        # Stateful infra (postgres/minio) are not our signed app images and run
+        # with their own security model; exempt from the app-pod hardening policy.
+        any:
+          - resources:
+              selector: { matchLabels: { app: postgres } }
+          - resources:
+              selector: { matchLabels: { app: minio } }
       validate:
         message: >-
           Pods must set runAsNonRoot=true (pod-level), readOnlyRootFilesystem=true,

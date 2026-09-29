@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno-policies
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"    # after Kyverno CRDs exist
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/AnkurDhamija/cv-platform.git
+    targetRevision: HEAD
+    path: deploy/policies/kyverno
+    directory:
+      include: "require-security-context.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    retry:
+      limit: 5
+      backoff: { duration: 20s, maxDuration: 3m, factor: 2 }
