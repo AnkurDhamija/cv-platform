@@ -2,8 +2,8 @@
 replicas: 2
 image:
   repository: europe-west1-docker.pkg.dev/project-b3ca7570-d2b6-41c3-aaa/cv-platform-images/public-api
-  tag: dc86f2ad549cd046deb91a148b45afc5fd9edf86 # bootstrap; CI pins `digest` below on each build
-  digest: "sha256:b02a5c6b420f34a55f5bffc190a0a8f7068502cf4d24e783cab8e7bc490f7d09"
+  tag: 69e47cf96933892ef8bffdd59ea6c19ab4342a73 # bootstrap; CI pins `digest` below on each build
+  digest: "sha256:99f371f65fc070a48ea7e99c407a71939d717f3b54af580802cbc482e8685707"
 serviceAccount:
   gsa: pubapi-gsa@project-b3ca7570-d2b6-41c3-aaa.iam.gserviceaccount.com
 # Production knobs — ON in dev (GKE has metrics-server; PDB survives node drains).
