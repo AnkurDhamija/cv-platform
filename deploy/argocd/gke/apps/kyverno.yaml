@@ -11,6 +11,17 @@ spec:
     repoURL: https://kyverno.github.io/kyverno/
     chart: kyverno
     targetRevision: 3.2.6
+    helm:
+      values: |
+        # Bitnami deprecated public bitnami/kubectl (2025); use relocated repo.
+        webhooksCleanup:      { image: { repository: bitnamilegacy/kubectl } }
+        policyReportsCleanup: { image: { repository: bitnamilegacy/kubectl } }
+        cleanupJobs:
+          admissionReports:        { image: { repository: bitnamilegacy/kubectl } }
+          clusterAdmissionReports: { image: { repository: bitnamilegacy/kubectl } }
+          ephemeralReports:        { image: { repository: bitnamilegacy/kubectl } }
+          clusterEphemeralReports: { image: { repository: bitnamilegacy/kubectl } }
+          updateRequests:          { image: { repository: bitnamilegacy/kubectl } }
   destination:
     server: https://kubernetes.default.svc
     namespace: kyverno
