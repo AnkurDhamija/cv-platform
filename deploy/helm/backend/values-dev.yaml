@@ -2,8 +2,8 @@
 gcsBucket: project-b3ca7570-d2b6-41c3-aaa-cvs-dev
 image:
   repository: europe-west1-docker.pkg.dev/project-b3ca7570-d2b6-41c3-aaa/cv-platform-images/cv-processor
-  tag: 85c93b269f558a145e24fc2b8a66f5dd441fa540 # bootstrap; CI pins `digest` below on each build
-  digest: "sha256:6b6dbf7065fe68b3addc29a980218b34124a6366aa4e726fbb8c8ee5c8e752ad"
+  tag: 43564ad6fc7615ebf6c1952044ae63b90f79bad3 # bootstrap; CI pins `digest` below on each build
+  digest: "sha256:849c78ce758a95cf83ed43f366d71212c4281885128a19cef1dadf1a6aec545e"
 serviceAccount:
   gsa: cvproc-gsa@project-b3ca7570-d2b6-41c3-aaa.iam.gserviceaccount.com
 # Production knobs — ON in dev. min 2 keeps PDB minAvailable:1 drain-safe.
